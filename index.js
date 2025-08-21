@@ -20,20 +20,27 @@ const wss = new WebSocketServer({ server });
 // In-memory map to keep track of connected machines
 const machineConnections = new Map(); // machineId => socket
 
+function heartbeat() {
+  this.isAlive = true;
+}
+
 wss.on('connection', (ws, req) => {
   console.log('🔌 WebSocket connected');
-
-  // Log headers for debugging
-  console.log('Connection headers:', req.headers);
+  ws.isAlive = true;
+  ws.on('pong', heartbeat);
 
   // Handle incoming messages from clients (vending machines)
   ws.on('message', (data) => {
     try {
       const message = JSON.parse(data);
+
       if (message.type === 'register') {
         const { machineId } = message;
         machineConnections.set(machineId, ws);
         console.log(`✅ Registered machine: ${machineId}`);
+      } else if (message.type === 'ping') {
+        // Optional: Handle client heartbeat ping
+        ws.send(JSON.stringify({ type: 'pong' }));
       }
     } catch (err) {
       console.error('❌ Error parsing message:', err);
@@ -51,10 +58,26 @@ wss.on('connection', (ws, req) => {
     }
   });
 
-  // Handle any errors
+  // Handle errors
   ws.on('error', (err) => {
     console.error('❌ WebSocket error:', err);
   });
+});
+
+// Ping clients every 30 seconds to keep alive
+const interval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (!ws.isAlive) {
+      console.log('❌ Terminating dead connection');
+      return ws.terminate();
+    }
+    ws.isAlive = false;
+    ws.ping(); // trigger client to respond with pong
+  });
+}, 30000);
+
+wss.on('close', () => {
+  clearInterval(interval);
 });
 
 // Endpoint to receive webhooks
@@ -68,6 +91,7 @@ app.post('/webhook', (req, res) => {
 
   if (event.status === 'CAPTURED' && machineId && slot && products) {
     const socket = machineConnections.get(machineId);
+
     if (socket) {
       socket.send(JSON.stringify({ type: 'dispense', slot, products }));
       console.log(`✅ Sent dispense command to machine ${machineId}, slot ${slot}`);
