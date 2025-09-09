@@ -31,6 +31,7 @@ wss.on('connection', (ws, req) => {
 
   // Handle incoming messages from clients (vending machines)
   ws.on('message', (data) => {
+    console.log(data);
     try {
       const message = JSON.parse(data);
 
