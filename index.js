@@ -45,7 +45,7 @@ wss.on('connection', (ws) => {
         const machineSocket = machineConnections.get(machineId);
         if (machineSocket) {
           machineSocket.send(JSON.stringify({ type: 'dispense', slotNumber, products }));
-          console.log(`✅ Dispense sent to ${machineId} slot ${slot\number}`);
+          console.log(`✅ Dispense sent to ${machineId} slot ${slotNumber}`);
         } else {
           console.log(`⚠️ Machine not connected: ${machineId}`);
         }
