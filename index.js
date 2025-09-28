@@ -41,11 +41,11 @@ wss.on('connection', (ws) => {
 
       // Optional: frontend sends dispense command
       if (message.type === 'dispense') {
-        const { machineId, slot, products } = message;
+        const { machineId, slotNumber, products } = message;
         const machineSocket = machineConnections.get(machineId);
         if (machineSocket) {
-          machineSocket.send(JSON.stringify({ type: 'dispense', slot, products }));
-          console.log(`✅ Dispense sent to ${machineId} slot ${slot}`);
+          machineSocket.send(JSON.stringify({ type: 'dispense', slotNumber, products }));
+          console.log(`✅ Dispense sent to ${machineId} slot ${slot\number}`);
         } else {
           console.log(`⚠️ Machine not connected: ${machineId}`);
         }
