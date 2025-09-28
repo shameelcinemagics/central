@@ -9,95 +9,87 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(bodyParser.json());
 
-// Create an HTTP server
+// HTTP Server
 const server = app.listen(PORT, () => {
   console.log(`🌐 Backend server running on port ${PORT}`);
 });
 
-// WebSocket setup
+// WebSocket Server
 const wss = new WebSocketServer({ server });
 
-// In-memory map to keep track of connected machines
-const machineConnections = new Map(); // machineId => socket
+// Map to track machines: machineId => ws
+const machineConnections = new Map();
 
 function heartbeat() {
   this.isAlive = true;
 }
 
-wss.on('connection', (ws, req) => {
-  console.log('🔌 WebSocket connected');
+wss.on('connection', (ws) => {
   ws.isAlive = true;
   ws.on('pong', heartbeat);
 
-  // Handle incoming messages from clients (vending machines)
   ws.on('message', (data) => {
-    console.log(data);
     try {
       const message = JSON.parse(data);
 
+      // Register machine
       if (message.type === 'register') {
         const { machineId } = message;
         machineConnections.set(machineId, ws);
         console.log(`✅ Registered machine: ${machineId}`);
-      } else if (message.type === 'ping') {
-        // Optional: Handle client heartbeat ping
-        ws.send(JSON.stringify({ type: 'pong' }));
+      }
+
+      // Optional: frontend sends dispense command
+      if (message.type === 'dispense') {
+        const { machineId, slot, products } = message;
+        const machineSocket = machineConnections.get(machineId);
+        if (machineSocket) {
+          machineSocket.send(JSON.stringify({ type: 'dispense', slot, products }));
+          console.log(`✅ Dispense sent to ${machineId} slot ${slot}`);
+        } else {
+          console.log(`⚠️ Machine not connected: ${machineId}`);
+        }
       }
     } catch (err) {
       console.error('❌ Error parsing message:', err);
     }
   });
 
-  // Handle connection close
   ws.on('close', () => {
     for (const [id, socket] of machineConnections.entries()) {
       if (socket === ws) {
         machineConnections.delete(id);
         console.log(`❌ Machine disconnected: ${id}`);
-        break;
       }
     }
   });
 
-  // Handle errors
-  ws.on('error', (err) => {
-    console.error('❌ WebSocket error:', err);
-  });
+  ws.on('error', (err) => console.error('❌ WebSocket error:', err));
 });
 
-// Ping clients every 30 seconds to keep alive
-const interval = setInterval(() => {
+// Ping every 30s to keep connections alive
+setInterval(() => {
   wss.clients.forEach((ws) => {
-    if (!ws.isAlive) {
-      console.log('❌ Terminating dead connection');
-      return ws.terminate();
-    }
+    if (!ws.isAlive) return ws.terminate();
     ws.isAlive = false;
-    ws.ping(); // trigger client to respond with pong
+    ws.ping();
   });
 }, 30000);
 
-wss.on('close', () => {
-  clearInterval(interval);
-});
-
-// Endpoint to receive webhooks
+// Optional: webhook endpoint (e.g., from Tap Payments)
 app.post('/webhook', (req, res) => {
   const event = req.body;
-  console.log('📥 Received webhook:', event);
-
   const machineId = event.metadata?.machineId;
   const slot = event.metadata?.slot;
   const products = event.metadata?.products;
 
-  if (event.status === 'CAPTURED' && machineId && slot && products) {
-    const socket = machineConnections.get(machineId);
-
-    if (socket) {
-      socket.send(JSON.stringify({ type: 'dispense', slot, products }));
-      console.log(`✅ Sent dispense command to machine ${machineId}, slot ${slot}`);
+  if (event.status === 'CAPTURED' && machineId && slot) {
+    const ws = machineConnections.get(machineId);
+    if (ws) {
+      ws.send(JSON.stringify({ type: 'dispense', slot, products }));
+      console.log(`✅ Dispense via webhook to ${machineId} slot ${slot}`);
     } else {
-      console.log(`⚠️ No machine connected with ID ${machineId}`);
+      console.log(`⚠️ Machine not connected: ${machineId}`);
     }
   }
 
